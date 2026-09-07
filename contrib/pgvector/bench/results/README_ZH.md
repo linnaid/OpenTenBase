@@ -158,6 +158,7 @@ results/*
 - 查询数量、`TOP_K`、`lists` 和 `probes` 参数。
 - 客户端数量、worker 数量、预热时间、测量时间和重复次数。
 - `work_mem`、JIT 和扫描路径等 PostgreSQL 参数。
+- `maintenance_work_mem` 等索引构建参数。
 - 测试使用 warm cache、cold cache 还是受控缓存条件。
 
 可以使用 `capture_environment.sh` 自动收集其中的大部分信息。

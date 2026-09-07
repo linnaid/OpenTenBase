@@ -92,6 +92,8 @@ Configuration files use trusted Bash-style variable assignments.
 | `WARMUP_SECONDS` | Warmup duration for each configuration |
 | `DURATION_SECONDS` | Measurement duration for each configuration |
 | `REPEATS` | Number of measured repetitions |
+| `WORK_MEM` | Per-query working memory |
+| `MAINTENANCE_WORK_MEM` | Memory available during index creation |
 
 Available profiles:
 

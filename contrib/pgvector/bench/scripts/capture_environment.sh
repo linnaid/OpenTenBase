@@ -244,6 +244,7 @@ fi
 	printf 'jit=%s\n' "${JIT:-<unset>}"
 	printf 'enable_seqscan=%s\n' "${ENABLE_SEQSCAN:-<unset>}"
 	printf 'work_mem=%s\n' "${WORK_MEM:-<unset>}"
+	printf 'maintenance_work_mem=%s\n' "${MAINTENANCE_WORK_MEM:-<unset>}"
 	printf 'random_seed=%s\n' "${RANDOM_SEED:-<unset>}"
 	printf 'query_random_seed=%s\n' "${QUERY_RANDOM_SEED:-<unset>}"
 	printf 'clusters=%s\n' "${CLUSTERS:-<unset>}"

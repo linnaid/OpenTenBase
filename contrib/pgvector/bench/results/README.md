@@ -164,6 +164,7 @@ ignored raw-result files or beside the project report:
 - Query count, `TOP_K`, `lists`, and `probes` values.
 - Client count, worker count, warmup, duration, and repetition count.
 - PostgreSQL settings such as `work_mem`, JIT, and scan-path settings.
+- Index-build settings such as `maintenance_work_mem`.
 - Whether the test used warm cache, cold cache, or controlled cache conditions.
 
 Use `capture_environment.sh` to collect most of this information automatically.

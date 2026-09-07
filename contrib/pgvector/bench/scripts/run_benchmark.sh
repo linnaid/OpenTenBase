@@ -289,16 +289,27 @@ create_index()
 	local lists=$2
 	local opclass
 	local log_file="$output_dir/logs/create_index_${metric}_lists_${lists}.log"
+	local psql_arguments
 
 	opclass=$(operator_class_for_metric "$metric")
 
-	"$psql_command" \
+	psql_arguments=(
 		-X \
 		-v ON_ERROR_STOP=1 \
 		-v "metric=$metric" \
 		-v "opclass=$opclass" \
 		-v "lists=$lists" \
-		-f "$bench_dir/sql/create_index.sql" \
+		-f "$bench_dir/sql/create_index.sql"
+	)
+
+	if [[ -n "${MAINTENANCE_WORK_MEM:-}" ]]; then
+		psql_arguments+=(
+			-v "maintenance_work_mem=$MAINTENANCE_WORK_MEM"
+		)
+	fi
+
+	"$psql_command" \
+		"${psql_arguments[@]}" \
 		>"$log_file" 2>&1
 }
 

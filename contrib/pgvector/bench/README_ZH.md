@@ -87,6 +87,8 @@ build/generate_vectors
 | `WARMUP_SECONDS` | 每组配置的预热时间 |
 | `DURATION_SECONDS` | 每组配置的正式测量时间 |
 | `REPEATS` | 正式测量重复次数 |
+| `WORK_MEM` | 单次查询可用的工作内存 |
+| `MAINTENANCE_WORK_MEM` | 创建索引时可用的内存 |
 
 当前配置 profile：
 
