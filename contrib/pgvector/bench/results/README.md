@@ -21,6 +21,10 @@ results/
 │   └── run_all/
 │       ├── benchmark_YYYYmmdd_HHMMSS.csv
 │       └── logs/
+├── disk/
+│   └── run_all/
+│       ├── benchmark_YYYYmmdd_HHMMSS.csv
+│       └── logs/
 └── comparison/
     └── l2_baseline_candidate.csv
 ```

@@ -17,7 +17,8 @@ bench/
 ├── config/
 │   ├── smoke.conf
 │   ├── quick.conf
-│   └── large.conf
+│   ├── large.conf
+│   └── disk.conf
 ├── scripts/
 │   ├── build_tools.sh
 │   ├── capture_environment.sh
@@ -100,6 +101,7 @@ Available profiles:
 - `config/smoke.conf`: 10,000 rows, 32 dimensions, short exploratory test.
 - `config/quick.conf`: 100,000 rows, 128 dimensions, daily regression test.
 - `config/large.conf`: reserved for the large-scale profile.
+- `config/disk.conf`: 8,000,000 rows, 128 dimensions, controlled-disk test.
 
 ## Prepare Dataset
 

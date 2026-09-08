@@ -16,7 +16,8 @@ bench/
 ├── config/
 │   ├── smoke.conf
 │   ├── quick.conf
-│   └── large.conf
+│   ├── large.conf
+│   └── disk.conf
 ├── scripts/
 │   ├── build_tools.sh
 │   ├── capture_environment.sh
@@ -95,6 +96,7 @@ build/generate_vectors
 - `config/smoke.conf`：10,000 条数据、32 维向量，用于短时探索性测试。
 - `config/quick.conf`：100,000 条数据、128 维向量，用于日常回归测试。
 - `config/large.conf`：为大规模测试 profile 预留。
+- `config/disk.conf`：8,000,000 条数据、128 维向量，用于 controlled-disk 测试。
 
 ## 准备数据集
 
