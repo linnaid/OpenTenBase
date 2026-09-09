@@ -248,6 +248,7 @@ fi
 	printf 'random_seed=%s\n' "${RANDOM_SEED:-<unset>}"
 	printf 'query_random_seed=%s\n' "${QUERY_RANDOM_SEED:-<unset>}"
 	printf 'clusters=%s\n' "${CLUSTERS:-<unset>}"
+	printf 'category_count=%s\n' "${CATEGORY_COUNT:-<unset>}"
 	printf '\n'
 
 	printf '%s\n' '[database_connection]'

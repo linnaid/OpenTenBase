@@ -23,15 +23,21 @@ bench/
 │   ├── capture_environment.sh
 │   ├── compare_results.sh
 │   ├── prepare_dataset.sh
-│   └── run_benchmark.sh
+│   ├── run_benchmark.sh
+│   └── run_filtered_benchmark.sh
 ├── sql/
 │   ├── initialize.sql
 │   ├── exact_search.sql
+│   ├── exact_search_filtered.sql
 │   ├── create_index.sql
 │   ├── measure_recall.sql
+│   ├── measure_filtered_recall.sql
 │   ├── workload_l2.sql
 │   ├── workload_ip.sql
 │   └── workload_cosine.sql
+│   ├── workload_filtered_l2.sql
+│   ├── workload_filtered_ip.sql
+│   └── workload_filtered_cosine.sql
 └── src/
     ├── generate_vectors.c
     └── summarize_latency.c
@@ -81,6 +87,7 @@ build/generate_vectors
 | `DIMENSIONS` | 向量维度 |
 | `QUERY_COUNT` | 查询向量数量 |
 | `RECALL_QUERY_COUNT` | 用于 Recall@K 的查询数量 |
+| `CATEGORY_COUNT` | 确定性过滤分类的数量 |
 | `TOP_K` | 每次返回的最近邻数量 |
 | `LISTS_VALUES` | IVFFlat `lists` 参数矩阵 |
 | `PROBES_VALUES` | IVFFlat `probes` 参数矩阵 |
@@ -127,11 +134,13 @@ DB_NAME=pgvector_bench
 
 脚本会创建以下表：
 
-- `vector_bench.items`：待检索的 item 向量。
+- `vector_bench.items`：待检索的 item 向量和确定性的 `category_id` 值。
 - `vector_bench.queries`：查询向量。
 - `vector_bench.truth`：精确搜索 ground truth。
 
 脚本还会将数据集元信息写入对应的结果目录。
+
+`category_id` 按照 `(id - 1) % CATEGORY_COUNT` 自动生成。默认使用 1,000 个分类时，一个分类约匹配 0.1% 的数据，十个分类约匹配 1% 的数据。
 
 ## 生成精确真值
 
@@ -158,6 +167,92 @@ psql \
 ```
 
 每种距离类型都应生成 `QUERY_COUNT * TOP_K` 条真值记录。
+
+准备带分类字段的数据集后，生成过滤场景的精确真值：
+
+```bash
+psql \
+  -X \
+  -v ON_ERROR_STOP=1 \
+  -v recall_query_count=100 \
+  -v top_k=10 \
+  -v category_count=1000 \
+  -f sql/exact_search_filtered.sql
+```
+
+该脚本会为 `percent_1` 和 `percent_0_1` 两种过滤条件生成 L2、Inner Product 和 Cosine 的精确结果。
+
+## 过滤 workload
+
+过滤 workload 文件是 pgbench 脚本，必须使用 `pgbench` 执行；`measure_filtered_recall.sql` 必须使用 `psql` 执行。
+
+过滤 workload 支持以下变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `query_count` | 可用查询向量数量 |
+| `top_k` | 每次返回的最近邻数量 |
+| `probes` | 初始 IVFFlat probes 数量 |
+| `filter_limit` | `category_id` 的排他上界 |
+| `iterative_scan` | `off` 或 `relaxed_order` |
+| `max_probes` | iterative scan 允许的最大 probes |
+
+当 `CATEGORY_COUNT=1000` 时，使用以下过滤参数：
+
+| profile | `filter_limit` | 近似选择率 |
+| --- | ---: | ---: |
+| `percent_1` | `10` | 1% |
+| `percent_0_1` | `1` | 0.1% |
+
+运行过滤 workload 前，先创建匹配的 IVFFlat 索引。例如创建 L2 索引：
+
+```bash
+psql \
+  -X \
+  -v ON_ERROR_STOP=1 \
+  -v metric=l2 \
+  -v opclass=vector_l2_ops \
+  -v lists=100 \
+  -f sql/create_index.sql
+```
+
+执行一次过滤 L2 workload：
+
+```bash
+pgbench \
+  -n \
+  -M simple \
+  -c 1 \
+  -j 1 \
+  -t 1 \
+  -D query_count=100 \
+  -D top_k=10 \
+  -D probes=1 \
+  -D filter_limit=10 \
+  -D iterative_scan=off \
+  -D max_probes=100 \
+  -f sql/workload_filtered_l2.sql \
+  pgvector_bench
+```
+
+测量相同索引和过滤条件下的 Recall@10：
+
+```bash
+psql \
+  -X \
+  -v ON_ERROR_STOP=1 \
+  -v metric=l2 \
+  -v filter_name=percent_1 \
+  -v filter_limit=10 \
+  -v probes=1 \
+  -v iterative_scan=off \
+  -v max_probes=100 \
+  -v recall_query_count=100 \
+  -v top_k=10 \
+  -f sql/measure_filtered_recall.sql
+```
+
+将 `iterative_scan` 改为 `relaxed_order` 后重复测试，可以比较 iterative list 扩展的影响。`max_probes` 应不小于初始 `probes` 值。
 
 ## 运行 benchmark
 

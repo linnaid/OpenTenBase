@@ -54,6 +54,9 @@ The benchmark scripts can generate the following files:
 - `logs/pgbench_*.log`: warmup and measured pgbench output.
 - `logs/recall_*.out`: raw Recall@K SQL output.
 - `logs/recall_*.err`: Recall@K error output.
+- Filtered ground truth is stored in `vector_bench.filtered_truth` and is regenerated with the dataset.
+- Filtered workload and Recall outputs use the same `metric`, filter profile, and probe settings as the corresponding CSV result.
+- `filtered_benchmark_*.csv`: filtered workload latency and Recall@K results.
 
 ## CSV Schema
 
@@ -164,7 +167,7 @@ ignored raw-result files or beside the project report:
 - pgvector version and extension commit.
 - Operating system, CPU, memory, and storage information.
 - Compiler and build configuration.
-- Dataset rows, dimensions, clusters, and random seeds.
+- Dataset rows, dimensions, clusters, filter categories, and random seeds.
 - Query count, `TOP_K`, `lists`, and `probes` values.
 - Client count, worker count, warmup, duration, and repetition count.
 - PostgreSQL settings such as `work_mem`, JIT, and scan-path settings.

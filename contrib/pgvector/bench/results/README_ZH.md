@@ -51,6 +51,9 @@ benchmark 脚本可能生成以下文件：
 - `logs/pgbench_*.log`：预热和正式 pgbench 输出。
 - `logs/recall_*.out`：Recall@K SQL 原始输出。
 - `logs/recall_*.err`：Recall@K 错误输出。
+- 过滤场景的 ground truth 保存在 `vector_bench.filtered_truth` 中，并随数据集重新生成。
+- 过滤 workload 和 Recall 输出应与对应 CSV 结果使用相同的 `metric`、过滤 profile 和 probes 参数。
+- `filtered_benchmark_*.csv`：过滤 workload 的延迟和 Recall@K 结果。
 
 ## CSV 格式
 
@@ -158,7 +161,7 @@ results/*
 - pgvector 版本和扩展 commit。
 - 操作系统、CPU、内存和存储信息。
 - 编译器和构建配置。
-- 数据集行数、维度、聚类数量和随机种子。
+- 数据集行数、维度、聚类数量、过滤分类数量和随机种子。
 - 查询数量、`TOP_K`、`lists` 和 `probes` 参数。
 - 客户端数量、worker 数量、预热时间、测量时间和重复次数。
 - `work_mem`、JIT 和扫描路径等 PostgreSQL 参数。

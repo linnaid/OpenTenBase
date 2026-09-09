@@ -1,13 +1,7 @@
 -- Inner Product distance workload for pgbench.
 
--- This file is intended to be executed by pgbench with the -f option.
--- The benchmark runner must provide the following variables with -D.
--- query_count: number of query vectors available in the benchmark table.
--- top_k: number of nearest neighbors returned by each query.
--- probes: number of IVFFlat lists probed by each query.
-
 -- Example:
-
+--
 -- pgbench \
 --     -n \
 --     -M simple \

@@ -24,15 +24,21 @@ bench/
 │   ├── capture_environment.sh
 │   ├── compare_results.sh
 │   ├── prepare_dataset.sh
-│   └── run_benchmark.sh
+│   ├── run_benchmark.sh
+│   └── run_filtered_benchmark.sh
 ├── sql/
 │   ├── initialize.sql
 │   ├── exact_search.sql
+│   ├── exact_search_filtered.sql
 │   ├── create_index.sql
 │   ├── measure_recall.sql
+│   ├── measure_filtered_recall.sql
 │   ├── workload_l2.sql
 │   ├── workload_ip.sql
 │   └── workload_cosine.sql
+│   ├── workload_filtered_l2.sql
+│   ├── workload_filtered_ip.sql
+│   └── workload_filtered_cosine.sql
 └── src/
     ├── generate_vectors.c
     └── summarize_latency.c
@@ -86,6 +92,7 @@ Configuration files use trusted Bash-style variable assignments.
 | `DIMENSIONS` | Vector dimension |
 | `QUERY_COUNT` | Number of query vectors |
 | `RECALL_QUERY_COUNT` | Number of queries used for Recall@K |
+| `CATEGORY_COUNT` | Number of deterministic filter categories |
 | `TOP_K` | Number of nearest neighbors returned |
 | `LISTS_VALUES` | IVFFlat `lists` parameter matrix |
 | `PROBES_VALUES` | IVFFlat `probes` parameter matrix |
@@ -133,11 +140,15 @@ Prepare the smoke dataset:
 
 The script creates the following tables:
 
-- `vector_bench.items`: searchable item vectors.
+- `vector_bench.items`: searchable item vectors and deterministic `category_id` values.
 - `vector_bench.queries`: query vectors.
 - `vector_bench.truth`: exact-search ground truth.
 
 It also writes dataset metadata to the selected result directory.
+
+`category_id` is generated as `(id - 1) % CATEGORY_COUNT`. With the default
+1,000 categories, one category selects approximately 0.1% of rows and ten
+categories select approximately 1% of rows.
 
 ## Generate Ground Truth
 
@@ -164,6 +175,97 @@ psql \
 ```
 
 The output should contain `QUERY_COUNT * TOP_K` rows for each distance metric.
+
+Generate filtered ground truth after preparing a dataset with categories:
+
+```bash
+psql \
+  -X \
+  -v ON_ERROR_STOP=1 \
+  -v recall_query_count=100 \
+  -v top_k=10 \
+  -v category_count=1000 \
+  -f sql/exact_search_filtered.sql
+```
+
+The filtered script generates exact results for `percent_1` and
+`percent_0_1` across L2, inner product, and cosine distance.
+
+## Filtered Workloads
+
+The filtered workload files are pgbench scripts. They must be executed with
+`pgbench`, while `measure_filtered_recall.sql` must be executed with `psql`.
+
+The workloads support these variables:
+
+| Variable | Description |
+| --- | --- |
+| `query_count` | Number of available query vectors |
+| `top_k` | Number of neighbors returned |
+| `probes` | Initial IVFFlat probe count |
+| `filter_limit` | Exclusive upper bound for `category_id` |
+| `iterative_scan` | `off` or `relaxed_order` |
+| `max_probes` | Maximum probes for iterative scans |
+
+With `CATEGORY_COUNT=1000`, use:
+
+| Profile | `filter_limit` | Approximate selectivity |
+| --- | ---: | ---: |
+| `percent_1` | `10` | 1% |
+| `percent_0_1` | `1` | 0.1% |
+
+Create the matching IVFFlat index before running a filtered workload. For
+example, the L2 index is created with:
+
+```bash
+psql \
+  -X \
+  -v ON_ERROR_STOP=1 \
+  -v metric=l2 \
+  -v opclass=vector_l2_ops \
+  -v lists=100 \
+  -f sql/create_index.sql
+```
+
+Run one filtered L2 workload transaction:
+
+```bash
+pgbench \
+  -n \
+  -M simple \
+  -c 1 \
+  -j 1 \
+  -t 1 \
+  -D query_count=100 \
+  -D top_k=10 \
+  -D probes=1 \
+  -D filter_limit=10 \
+  -D iterative_scan=off \
+  -D max_probes=100 \
+  -f sql/workload_filtered_l2.sql \
+  pgvector_bench
+```
+
+Measure filtered Recall@10 for the same index and filter:
+
+```bash
+psql \
+  -X \
+  -v ON_ERROR_STOP=1 \
+  -v metric=l2 \
+  -v filter_name=percent_1 \
+  -v filter_limit=10 \
+  -v probes=1 \
+  -v iterative_scan=off \
+  -v max_probes=100 \
+  -v recall_query_count=100 \
+  -v top_k=10 \
+  -f sql/measure_filtered_recall.sql
+```
+
+Repeat the measurement with `iterative_scan=relaxed_order` to compare the
+effect of iterative list expansion. Keep `max_probes` at least as large as
+the initial `probes` value.
 
 ## Run Benchmark
 

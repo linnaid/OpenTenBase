@@ -137,6 +137,7 @@ required_variables=(
 	RANDOM_SEED
 	QUERY_RANDOM_SEED
 	CLUSTERS
+	CATEGORY_COUNT
 	DB_HOST
 	DB_PORT
 	DB_USER
@@ -173,6 +174,7 @@ numeric_variables=(
 	RANDOM_SEED
 	QUERY_RANDOM_SEED
 	CLUSTERS
+	CATEGORY_COUNT
 	DB_PORT
 )
 
@@ -197,6 +199,12 @@ fi
 # Top-K must not exceed the total number of item rows.
 if ((TOP_K > ROWS)); then
 	printf '%s\n' 'TOP_K must not exceed ROWS' >&2
+	exit 1
+fi
+
+# The category count must not exceed the number of item rows.
+if ((CATEGORY_COUNT > ROWS)); then
+	printf '%s\n' 'CATEGORY_COUNT must not exceed ROWS' >&2
 	exit 1
 fi
 
@@ -295,6 +303,7 @@ prepare_started_at=$(date --iso-8601=seconds)
 
 "${psql_command[@]}" \
 	-v "dimensions=$DIMENSIONS" \
+	-v "category_count=$CATEGORY_COUNT" \
 	-f "$initialize_sql"
 
 # Generate and import item vectors as a stream.
@@ -334,9 +343,22 @@ SELECT
     (SELECT count(*) FROM vector_bench.items),
     (SELECT count(*) FROM vector_bench.queries),
     (SELECT min(vector_dims(embedding)) FROM vector_bench.items),
-    (SELECT max(vector_dims(embedding)) FROM vector_bench.items),
-    (SELECT min(vector_dims(embedding)) FROM vector_bench.queries),
-    (SELECT max(vector_dims(embedding)) FROM vector_bench.queries);
+	    (SELECT max(vector_dims(embedding)) FROM vector_bench.items),
+	    (SELECT min(vector_dims(embedding)) FROM vector_bench.queries),
+	    (SELECT max(vector_dims(embedding)) FROM vector_bench.queries),
+	    (SELECT min(category_id) FROM vector_bench.items),
+	    (SELECT max(category_id) FROM vector_bench.items),
+	    (SELECT count(DISTINCT category_id) FROM vector_bench.items),
+	    (SELECT min(category_rows) FROM (
+	        SELECT count(*) AS category_rows
+	        FROM vector_bench.items
+	        GROUP BY category_id
+	    ) AS category_distribution),
+	    (SELECT max(category_rows) FROM (
+	        SELECT count(*) AS category_rows
+	        FROM vector_bench.items
+	        GROUP BY category_id
+	    ) AS category_distribution);
 '
 )
 
@@ -348,6 +370,11 @@ IFS='|' read -r \
 	max_item_dimensions \
 	min_query_dimensions \
 	max_query_dimensions \
+	min_category_id \
+	max_category_id \
+	actual_category_count \
+	min_category_rows \
+	max_category_rows \
 	<<<"$validation_result"
 
 # Check whether the item row count is correct.
@@ -377,6 +404,26 @@ if [[ "$min_query_dimensions" != "$DIMENSIONS" ||
 	  "$max_query_dimensions" != "$DIMENSIONS" ]]; then
 	printf 'query dimension mismatch: expected %s, got %s..%s\n' \
 		"$DIMENSIONS" "$min_query_dimensions" "$max_query_dimensions" >&2
+	exit 1
+fi
+
+# Check the generated category range and distinct category count.
+if [[ "$min_category_id" != 0 ||
+	  "$max_category_id" != "$((CATEGORY_COUNT - 1))" ||
+	  "$actual_category_count" != "$CATEGORY_COUNT" ]]; then
+	printf 'category mismatch: expected range 0..%s with %s categories, got %s..%s with %s categories\n' \
+		"$((CATEGORY_COUNT - 1))" \
+		"$CATEGORY_COUNT" \
+		"$min_category_id" \
+		"$max_category_id" \
+		"$actual_category_count" >&2
+	exit 1
+fi
+
+# Deterministic modulo assignment keeps category sizes within one row.
+if ((max_category_rows - min_category_rows > 1)); then
+	printf 'category distribution is unbalanced: %s..%s rows per category\n' \
+		"$min_category_rows" "$max_category_rows" >&2
 	exit 1
 fi
 
@@ -417,6 +464,7 @@ metadata_file="$output_dir/dataset_metadata.txt"
 	printf 'random_seed=%s\n' "$RANDOM_SEED"
 	printf 'query_random_seed=%s\n' "$QUERY_RANDOM_SEED"
 	printf 'clusters=%s\n' "$CLUSTERS"
+	printf 'category_count=%s\n' "$CATEGORY_COUNT"
 	printf 'database_host=%s\n' "$DB_HOST"
 	printf 'database_port=%s\n' "$DB_PORT"
 	printf 'database_user=%s\n' "$DB_USER"
@@ -430,6 +478,11 @@ metadata_file="$output_dir/dataset_metadata.txt"
 		"$min_item_dimensions" "$max_item_dimensions"
 	printf 'query_dimensions=%s..%s\n' \
 		"$min_query_dimensions" "$max_query_dimensions"
+	printf 'category_id_range=%s..%s\n' \
+		"$min_category_id" "$max_category_id"
+	printf 'actual_category_count=%s\n' "$actual_category_count"
+	printf 'category_rows=%s..%s\n' \
+		"$min_category_rows" "$max_category_rows"
 	printf 'prepare_started_at=%s\n' "$prepare_started_at"
 	printf 'prepare_finished_at=%s\n' "$prepare_finished_at"
 } >"$metadata_file"

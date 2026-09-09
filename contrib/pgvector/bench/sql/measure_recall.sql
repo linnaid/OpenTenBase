@@ -1,11 +1,5 @@
 -- Measure Recall@K of IVFFlat approximate results against exact ground truth.
 
--- The caller must provide the following variables through psql -v.
--- metric: distance metric, one of l2, ip, or cosine.
--- probes: number of IVFFlat lists probed by each query.
--- recall_query_count: number of queries included in recall measurement.
--- top_k: number of nearest neighbors compared for each query.
---
 -- Example:
 --
 -- psql -X -v ON_ERROR_STOP=1 \
