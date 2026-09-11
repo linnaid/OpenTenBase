@@ -147,6 +147,13 @@ set -a
 source "$config_path"
 set +a
 
+VECTOR_TYPE=${VECTOR_TYPE:-vector}
+
+if [[ "$VECTOR_TYPE" != vector && "$VECTOR_TYPE" != halfvec ]]; then
+	printf 'VECTOR_TYPE must be vector or halfvec: %s\n' "$VECTOR_TYPE" >&2
+	exit 1
+fi
+
 for variable_name in \
 	PROFILE_NAME ROWS QUERY_COUNT RECALL_QUERY_COUNT TOP_K CATEGORY_COUNT \
 	LISTS_VALUES CLIENT_VALUES JOBS WARMUP_SECONDS DURATION_SECONDS REPEATS \
@@ -229,9 +236,9 @@ export PGOPTIONS="$pgoptions"
 operator_class_for_metric()
 {
 	case "$1" in
-		l2) printf '%s\n' vector_l2_ops ;;
-		ip) printf '%s\n' vector_ip_ops ;;
-		cosine) printf '%s\n' vector_cosine_ops ;;
+		l2) printf '%s_l2_ops\n' "$VECTOR_TYPE" ;;
+		ip) printf '%s_ip_ops\n' "$VECTOR_TYPE" ;;
+		cosine) printf '%s_cosine_ops\n' "$VECTOR_TYPE" ;;
 		*) printf 'unsupported metric: %s\n' "$1" >&2; exit 1 ;;
 	esac
 }
@@ -255,6 +262,7 @@ create_index()
 		-X
 		-v ON_ERROR_STOP=1
 		-v "metric=$metric"
+		-v "vector_type=$VECTOR_TYPE"
 		-v "opclass=$(operator_class_for_metric "$metric")"
 		-v "lists=$lists"
 		-f "$bench_dir/sql/create_index.sql"
@@ -358,6 +366,7 @@ measure_recall()
 		-F ',' \
 		-v ON_ERROR_STOP=1 \
 		-v "metric=$metric" \
+		-v "vector_type=$VECTOR_TYPE" \
 		-v "filter_name=$filter_name" \
 		-v "filter_limit=$filter_limit" \
 		-v "probes=$probes" \

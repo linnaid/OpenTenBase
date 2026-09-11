@@ -110,6 +110,8 @@ set -a
 source "$config_path"
 set +a
 
+VECTOR_TYPE=${VECTOR_TYPE:-vector}
+
 if [[ -z "${PROFILE_NAME:-}" ]]; then
 	printf '%s\n' 'PROFILE_NAME is missing from the configuration' >&2
 	exit 1
@@ -229,6 +231,7 @@ fi
 
 	printf '%s\n' '[benchmark_configuration]'
 	printf 'profile_name=%s\n' "${PROFILE_NAME:-<unset>}"
+	printf 'vector_type=%s\n' "$VECTOR_TYPE"
 	printf 'rows=%s\n' "${ROWS:-<unset>}"
 	printf 'dimensions=%s\n' "${DIMENSIONS:-<unset>}"
 	printf 'query_count=%s\n' "${QUERY_COUNT:-<unset>}"

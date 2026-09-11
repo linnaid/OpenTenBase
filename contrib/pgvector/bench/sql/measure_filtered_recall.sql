@@ -15,6 +15,11 @@
 
 \set ON_ERROR_STOP on
 
+\if :{?vector_type}
+\else
+\set vector_type vector
+\endif
+
 -- Check that all required psql variables are defined.
 \if :{?metric}
 \else
@@ -67,6 +72,7 @@
 -- Validate metric, filter, scan mode, and numeric parameters.
 SELECT
     (:'metric' IN ('l2', 'ip', 'cosine'))::integer AS valid_metric,
+    (:'vector_type' IN ('vector', 'halfvec'))::integer AS valid_vector_type,
     (:'filter_name' IN ('percent_1', 'percent_0_1'))::integer AS valid_filter,
     (:'iterative_scan' IN ('off', 'relaxed_order'))::integer AS valid_iterative_scan,
     (:'filter_limit' ~ '^[1-9][0-9]*$')::integer AS valid_filter_limit,
@@ -81,6 +87,15 @@ SELECT
 DO $$
 BEGIN
     RAISE EXCEPTION 'metric must be one of: l2, ip, cosine';
+END
+$$;
+\endif
+
+\if :valid_vector_type
+\else
+DO $$
+BEGIN
+    RAISE EXCEPTION 'vector_type must be vector or halfvec';
 END
 $$;
 \endif
@@ -150,9 +165,9 @@ $$;
 
 -- Determine the expected operator class for the selected metric.
 SELECT CASE :'metric'
-    WHEN 'l2' THEN 'vector_l2_ops'
-    WHEN 'ip' THEN 'vector_ip_ops'
-    ELSE 'vector_cosine_ops'
+    WHEN 'l2' THEN :'vector_type' || '_l2_ops'
+    WHEN 'ip' THEN :'vector_type' || '_ip_ops'
+    ELSE :'vector_type' || '_cosine_ops'
 END AS expected_opclass
 \gset
 

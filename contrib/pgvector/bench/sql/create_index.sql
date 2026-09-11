@@ -2,6 +2,7 @@
 
 -- This script requires the following variables to be passed with psql -v.
 -- metric: distance metric, one of l2, ip, or cosine.
+-- vector_type: data type, vector or halfvec (defaults to vector).
 -- opclass: the pgvector operator class matching the distance metric.
 -- lists: the lists parameter of the IVFFlat index.
 --
@@ -15,6 +16,11 @@
 
 -- Stop immediately when any SQL command fails.
 \set ON_ERROR_STOP on
+
+\if :{?vector_type}
+\else
+\set vector_type vector
+\endif
 
 -- Check whether the metric variable is defined.
 \if :{?metric}
@@ -64,16 +70,34 @@ $$;
 \endif
 
 SELECT CASE
-		   WHEN :'metric' = 'l2'
+		   WHEN :'vector_type' = 'vector'
+				AND :'metric' = 'l2'
 				AND :'opclass' = 'vector_l2_ops'
 		   THEN 1
 
-		   WHEN :'metric' = 'ip'
+		   WHEN :'vector_type' = 'vector'
+				AND :'metric' = 'ip'
 				AND :'opclass' = 'vector_ip_ops'
 		   THEN 1
 
-		   WHEN :'metric' = 'cosine'
+		   WHEN :'vector_type' = 'vector'
+				AND :'metric' = 'cosine'
 				AND :'opclass' = 'vector_cosine_ops'
+		   THEN 1
+
+		   WHEN :'vector_type' = 'halfvec'
+				AND :'metric' = 'l2'
+				AND :'opclass' = 'halfvec_l2_ops'
+		   THEN 1
+
+		   WHEN :'vector_type' = 'halfvec'
+				AND :'metric' = 'ip'
+				AND :'opclass' = 'halfvec_ip_ops'
+		   THEN 1
+
+		   WHEN :'vector_type' = 'halfvec'
+				AND :'metric' = 'cosine'
+				AND :'opclass' = 'halfvec_cosine_ops'
 		   THEN 1
 
 		   ELSE 0
@@ -84,7 +108,7 @@ SELECT CASE
 \else
 DO $$
 BEGIN
-	RAISE EXCEPTION 'metric and opclass do not match';
+	RAISE EXCEPTION 'vector_type, metric, and opclass do not match';
 END
 $$;
 \endif

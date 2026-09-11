@@ -21,6 +21,7 @@ bench_dir=$(
 config_path="$bench_dir/config/smoke.conf"
 output_dir=
 metrics=(l2 ip cosine)
+reuse_index=0
 
 
 print_usage()
@@ -44,6 +45,10 @@ Options:
       Run a comma-separated metric list.
       Supported metrics: l2, ip, cosine
       Default: l2,ip,cosine
+
+  --reuse-index
+      Reuse vector_bench.items_embedding_idx instead of rebuilding it.
+      This requires exactly one metric and one LISTS_VALUES entry.
 
   -h, --help
       Show this help message and exit.
@@ -88,6 +93,11 @@ while (($# > 0)); do
 			shift 2
 			;;
 
+		--reuse-index)
+			reuse_index=1
+			shift
+			;;
+
 		-h|--help)
 			print_usage
 			exit 0
@@ -123,6 +133,13 @@ set -a
 # shellcheck disable=SC1090
 source "$config_path"
 set +a
+
+VECTOR_TYPE=${VECTOR_TYPE:-vector}
+
+if [[ "$VECTOR_TYPE" != vector && "$VECTOR_TYPE" != halfvec ]]; then
+	printf 'VECTOR_TYPE must be vector or halfvec: %s\n' "$VECTOR_TYPE" >&2
+	exit 1
+fi
 
 # Check whether a required configuration variable is defined.
 require_variable()
@@ -267,13 +284,13 @@ operator_class_for_metric()
 {
 	case "$1" in
 		l2)
-			printf '%s\n' vector_l2_ops
+			printf '%s_l2_ops\n' "$VECTOR_TYPE"
 			;;
 		ip)
-			printf '%s\n' vector_ip_ops
+			printf '%s_ip_ops\n' "$VECTOR_TYPE"
 			;;
 		cosine)
-			printf '%s\n' vector_cosine_ops
+			printf '%s_cosine_ops\n' "$VECTOR_TYPE"
 			;;
 		*)
 			printf 'unsupported metric: %s\n' "$1" >&2
@@ -297,6 +314,7 @@ create_index()
 		-X \
 		-v ON_ERROR_STOP=1 \
 		-v "metric=$metric" \
+		-v "vector_type=$VECTOR_TYPE" \
 		-v "opclass=$opclass" \
 		-v "lists=$lists" \
 		-f "$bench_dir/sql/create_index.sql"
@@ -311,6 +329,35 @@ create_index()
 	"$psql_command" \
 		"${psql_arguments[@]}" \
 		>"$log_file" 2>&1
+}
+
+# Verify that reuse mode points at the expected physical index.
+verify_existing_index()
+{
+	local metric=$1
+	local lists=$2
+	local expected_opclass
+	local actual_definition
+
+	expected_opclass=$(operator_class_for_metric "$metric")
+	actual_definition=$("$psql_command" -X -A -t -v ON_ERROR_STOP=1 -c "
+SELECT opc.opcname || ',' || COALESCE(
+           (SELECT option_value
+            FROM pg_options_to_table(index_relation.reloptions)
+            WHERE option_name = 'lists'),
+           '100')
+FROM pg_class AS index_relation
+JOIN pg_index AS index_catalog
+  ON index_catalog.indexrelid = index_relation.oid
+JOIN pg_opclass AS opc
+  ON opc.oid = index_catalog.indclass[0]
+WHERE index_relation.oid = 'vector_bench.items_embedding_idx'::regclass;")
+
+	if [[ "$actual_definition" != "$expected_opclass,$lists" ]]; then
+		printf 'existing index mismatch: expected %s,%s, got %s\n' \
+			"$expected_opclass" "$lists" "${actual_definition:-<none>}" >&2
+		exit 1
+	fi
 }
 
 # Run one warmup or measured pgbench invocation.
@@ -366,6 +413,7 @@ measure_recall()
 		-F ',' \
 		-v ON_ERROR_STOP=1 \
 		-v "metric=$metric" \
+		-v "vector_type=$VECTOR_TYPE" \
 		-v "probes=$probes" \
 		-v "recall_query_count=$RECALL_QUERY_COUNT" \
 		-v "top_k=$TOP_K" \
@@ -416,16 +464,30 @@ parse_recall_row()
 
 
 printf 'Profile: %s\n' "$PROFILE_NAME"
+printf 'Vector type: %s\n' "$VECTOR_TYPE"
+printf 'Reuse index: %s\n' "$reuse_index"
 printf 'Configuration: %s\n' "$config_path"
 printf 'Output CSV: %s\n' "$csv_file"
 printf 'pgbench: %s\n' "$pgbench_command"
 printf 'psql: %s\n' "$psql_command"
 
+if ((reuse_index)); then
+	read -r -a configured_lists <<<"$LISTS_VALUES"
+	if ((${#metrics[@]} != 1 || ${#configured_lists[@]} != 1)); then
+		printf '%s\n' '--reuse-index requires exactly one metric and one LISTS_VALUES entry' >&2
+		exit 1
+	fi
+fi
+
 for metric in "${metrics[@]}"; do
 	operator_class_for_metric "$metric" >/dev/null
 
 	for lists in $LISTS_VALUES; do
-		create_index "$metric" "$lists"
+		if ((reuse_index)); then
+			verify_existing_index "$metric" "$lists"
+		else
+			create_index "$metric" "$lists"
+		fi
 
 		for probes in $PROBES_VALUES; do
 			if ((probes > lists)); then

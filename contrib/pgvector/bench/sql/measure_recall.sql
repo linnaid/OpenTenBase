@@ -12,6 +12,11 @@
 
 \set ON_ERROR_STOP on
 
+\if :{?vector_type}
+\else
+\set vector_type vector
+\endif
+
 
 -- Check whether the required psql variables are defined.
 \if :{?metric}
@@ -56,10 +61,11 @@ SELECT
 		WHEN :'metric' IN ('l2', 'ip', 'cosine') THEN 1
 		ELSE 0
 	END AS valid_metric,
+	(:'vector_type' IN ('vector', 'halfvec'))::integer AS valid_vector_type,
 	CASE :'metric'
-		WHEN 'l2' THEN 'vector_l2_ops'
-		WHEN 'ip' THEN 'vector_ip_ops'
-		WHEN 'cosine' THEN 'vector_cosine_ops'
+		WHEN 'l2' THEN :'vector_type' || '_l2_ops'
+		WHEN 'ip' THEN :'vector_type' || '_ip_ops'
+		WHEN 'cosine' THEN :'vector_type' || '_cosine_ops'
 		ELSE ''
 	END AS expected_opclass
 \gset
@@ -69,6 +75,15 @@ SELECT
 DO $$
 BEGIN
 	RAISE EXCEPTION 'metric must be one of: l2, ip, cosine';
+END
+$$;
+\endif
+
+\if :valid_vector_type
+\else
+DO $$
+BEGIN
+	RAISE EXCEPTION 'vector_type must be vector or halfvec';
 END
 $$;
 \endif

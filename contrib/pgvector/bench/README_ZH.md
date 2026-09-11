@@ -84,6 +84,7 @@ build/generate_vectors
 | 变量 | 说明 |
 | --- | --- |
 | `ROWS` | item 向量数量 |
+| `VECTOR_TYPE` | 向量列类型：`vector` 或 `halfvec`，默认为 `vector` |
 | `DIMENSIONS` | 向量维度 |
 | `QUERY_COUNT` | 查询向量数量 |
 | `RECALL_QUERY_COUNT` | 用于 Recall@K 的查询数量 |
@@ -104,6 +105,19 @@ build/generate_vectors
 - `config/quick.conf`：100,000 条数据、128 维向量，用于日常回归测试。
 - `config/large.conf`：为大规模测试 profile 预留。
 - `config/disk.conf`：8,000,000 条数据、128 维向量，用于 controlled-disk 测试。
+
+现有 profile 默认使用 `vector`。可以用环境变量复用同一 profile 测试
+`halfvec`，并使用独立结果目录：
+
+```bash
+VECTOR_TYPE=halfvec ./scripts/prepare_dataset.sh \
+  --config config/quick.conf \
+  --output results/quick-halfvec/dataset \
+  --recreate
+```
+
+为保证 baseline/candidate 使用同一个物理索引，可在只包含一个 lists 值的
+配置上使用 `--reuse-index`。该模式会校验现有索引的操作符类和 lists，不会重建索引。
 
 ## 准备数据集
 

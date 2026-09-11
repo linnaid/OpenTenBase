@@ -17,15 +17,16 @@ CREATE EXTENSION IF NOT EXISTS pg_prewarm;
 
 -- Create the table containing searchable item vectors.
 
--- :dimensions and :category_count are supplied by prepare_dataset.sh through psql -v.
+-- :vector_type, :dimensions, and :category_count are supplied by
+-- prepare_dataset.sh through psql -v.
 -- Example:
---      vector(:dimensions)
---      vector(32)
+--      :vector_type(:dimensions)
+--      halfvec(128)
 CREATE TABLE vector_bench.items
 (
     id bigint PRIMARY KEY,
 
-    embedding vector(:dimensions) NOT NULL,
+    embedding :vector_type(:dimensions) NOT NULL,
 
     -- Derive a deterministic category without changing the vector generator output.
     category_id integer GENERATED ALWAYS AS
@@ -47,7 +48,7 @@ CREATE TABLE vector_bench.queries
 (
     id bigint PRIMARY KEY,
 
-    embedding vector(:dimensions) NOT NULL,
+    embedding :vector_type(:dimensions) NOT NULL,
 
     CONSTRAINT queries_embedding_dimensions_check
             CHECK (vector_dims(embedding) = :dimensions),

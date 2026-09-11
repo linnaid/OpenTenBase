@@ -125,6 +125,10 @@ set -a
 source "$config_path"
 set +a
 
+# Preserve compatibility with existing profiles while allowing a caller to
+# select halfvec with VECTOR_TYPE=halfvec.
+VECTOR_TYPE=${VECTOR_TYPE:-vector}
+
 
 # Check whether all required configuration variables are defined.
 required_variables=(
@@ -151,6 +155,19 @@ for variable_name in "${required_variables[@]}"; do
 		exit 1
 	fi
 done
+
+case "$VECTOR_TYPE" in
+	vector)
+		max_ivfflat_dimensions=2000
+		;;
+	halfvec)
+		max_ivfflat_dimensions=4000
+		;;
+	*)
+		printf 'VECTOR_TYPE must be vector or halfvec: %s\n' "$VECTOR_TYPE" >&2
+		exit 1
+		;;
+esac
 
 # Check whether a configuration variable is a positive integer.
 require_positive_integer()
@@ -182,10 +199,10 @@ for variable_name in "${numeric_variables[@]}"; do
 	require_positive_integer "$variable_name"
 done
 
-# The vector type supports at most 2000 dimensions for IVFFlat.
-if ((DIMENSIONS > 2000)); then
-	printf 'DIMENSIONS must not exceed 2000 for IVFFlat: %s\n' \
-		"$DIMENSIONS" >&2
+# Enforce the IVFFlat dimension limit for the selected data type.
+if ((DIMENSIONS > max_ivfflat_dimensions)); then
+	printf 'DIMENSIONS must not exceed %s for IVFFlat %s: %s\n' \
+		"$max_ivfflat_dimensions" "$VECTOR_TYPE" "$DIMENSIONS" >&2
 	exit 1
 fi
 
@@ -302,6 +319,7 @@ prepare_started_at=$(date --iso-8601=seconds)
 # Recreate the benchmark schema and data tables.
 
 "${psql_command[@]}" \
+	-v "vector_type=$VECTOR_TYPE" \
 	-v "dimensions=$DIMENSIONS" \
 	-v "category_count=$CATEGORY_COUNT" \
 	-f "$initialize_sql"
@@ -456,6 +474,7 @@ metadata_file="$output_dir/dataset_metadata.txt"
 
 {
 	printf 'profile_name=%s\n' "$PROFILE_NAME"
+	printf 'vector_type=%s\n' "$VECTOR_TYPE"
 	printf 'rows=%s\n' "$ROWS"
 	printf 'dimensions=%s\n' "$DIMENSIONS"
 	printf 'query_count=%s\n' "$QUERY_COUNT"

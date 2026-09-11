@@ -89,6 +89,7 @@ Configuration files use trusted Bash-style variable assignments.
 | Variable | Description |
 | --- | --- |
 | `ROWS` | Number of item vectors |
+| `VECTOR_TYPE` | Vector column type: `vector` or `halfvec` (default: `vector`) |
 | `DIMENSIONS` | Vector dimension |
 | `QUERY_COUNT` | Number of query vectors |
 | `RECALL_QUERY_COUNT` | Number of queries used for Recall@K |
@@ -109,6 +110,20 @@ Available profiles:
 - `config/quick.conf`: 100,000 rows, 128 dimensions, daily regression test.
 - `config/large.conf`: reserved for the large-scale profile.
 - `config/disk.conf`: 8,000,000 rows, 128 dimensions, controlled-disk test.
+
+Existing profiles default to `vector`. Reuse a profile for `halfvec` with an
+independent output directory:
+
+```bash
+VECTOR_TYPE=halfvec ./scripts/prepare_dataset.sh \
+  --config config/quick.conf \
+  --output results/quick-halfvec/dataset \
+  --recreate
+```
+
+For a baseline/candidate comparison against the same physical index, use
+`--reuse-index` with exactly one metric and one `LISTS_VALUES` entry. The
+runner validates the existing operator class and lists value before measuring.
 
 ## Prepare Dataset
 
