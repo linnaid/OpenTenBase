@@ -557,8 +557,8 @@ halfvec_to_vector(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(result);
 }
 
-VECTOR_TARGET_CLONES static float
-VectorL2SquaredDistance(int dim, float *ax, float *bx)
+VECTOR_TARGET_CLONES float
+VectorL2SquaredDistance(int dim, const float *ax, const float *bx)
 {
 	float		distance = 0.0;
 
@@ -604,8 +604,8 @@ vector_l2_squared_distance(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8((double) VectorL2SquaredDistance(a->dim, a->x, b->x));
 }
 
-VECTOR_TARGET_CLONES static float
-VectorInnerProduct(int dim, float *ax, float *bx)
+VECTOR_TARGET_CLONES float
+VectorInnerProduct(int dim, const float *ax, const float *bx)
 {
 	float		distance = 0.0;
 

@@ -283,6 +283,15 @@ typedef struct IvfflatScanList
 	double		distance;
 }			IvfflatScanList;
 
+typedef enum IvfflatScanDistanceKind
+{
+	IVFFLAT_DISTANCE_FMGR,
+	IVFFLAT_DISTANCE_VECTOR_L2,
+	IVFFLAT_DISTANCE_VECTOR_IP,
+	IVFFLAT_DISTANCE_HALFVEC_L2,
+	IVFFLAT_DISTANCE_HALFVEC_IP
+} IvfflatScanDistanceKind;
+
 typedef struct IvfflatScanOpaqueData
 {
 	const		IvfflatTypeInfo *typeInfo;
@@ -304,7 +313,7 @@ typedef struct IvfflatScanOpaqueData
 	FmgrInfo   *procinfo;
 	FmgrInfo   *normprocinfo;
 	Oid			collation;
-	Datum		(*distfunc) (FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2);
+	IvfflatScanDistanceKind distanceKind;
 
 	/* Lists */
 	pairingheap *listQueue;

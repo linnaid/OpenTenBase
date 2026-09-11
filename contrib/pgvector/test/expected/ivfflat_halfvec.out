@@ -13,6 +13,8 @@ SELECT * FROM t ORDER BY val <-> '[3,3,3]';
  [0,0,0]
 (4 rows)
 
+SELECT * FROM t ORDER BY val <-> '[1,2]' LIMIT 1;
+ERROR:  different halfvec dimensions 3 and 2
 SELECT COUNT(*) FROM (SELECT * FROM t ORDER BY val <-> (SELECT NULL::halfvec)) t2;
  count 
 -------

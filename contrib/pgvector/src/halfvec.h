@@ -74,4 +74,7 @@ typedef struct HalfVector
 
 HalfVector *InitHalfVector(int dim);
 
+Datum		halfvec_l2_squared_distance(PG_FUNCTION_ARGS);
+Datum		halfvec_negative_inner_product(PG_FUNCTION_ARGS);
+
 #endif

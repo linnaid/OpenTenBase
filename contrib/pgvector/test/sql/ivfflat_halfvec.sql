@@ -9,6 +9,7 @@ CREATE INDEX ON t USING ivfflat (val halfvec_l2_ops) WITH (lists = 1);
 INSERT INTO t (val) VALUES ('[1,2,4]');
 
 SELECT * FROM t ORDER BY val <-> '[3,3,3]';
+SELECT * FROM t ORDER BY val <-> '[1,2]' LIMIT 1;
 SELECT COUNT(*) FROM (SELECT * FROM t ORDER BY val <-> (SELECT NULL::halfvec)) t2;
 SELECT COUNT(*) FROM t;
 

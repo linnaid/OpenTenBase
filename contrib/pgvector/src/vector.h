@@ -26,6 +26,11 @@ typedef struct Vector
 Vector	   *InitVector(int dim);
 void		PrintVector(char *msg, Vector * vector);
 int			vector_cmp_internal(Vector * a, Vector * b);
+float		VectorL2SquaredDistance(int dim, const float *ax, const float *bx);
+float		VectorInnerProduct(int dim, const float *ax, const float *bx);
+
+Datum		vector_l2_squared_distance(PG_FUNCTION_ARGS);
+Datum		vector_negative_inner_product(PG_FUNCTION_ARGS);
 
 /* TODO Move to better place */
 #if PG_VERSION_NUM >= 160000

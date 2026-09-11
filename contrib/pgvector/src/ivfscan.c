@@ -9,6 +9,8 @@
 #include "catalog/pg_operator_d.h"
 #include "catalog/pg_type_d.h"
 #include "fmgr.h"
+#include "halfutils.h"
+#include "halfvec.h"
 #include "lib/pairingheap.h"
 #include "ivfflat.h"
 #include "miscadmin.h"
@@ -42,6 +44,87 @@ CompareLists(const pairingheap_node *a, const pairingheap_node *b, void *arg)
 }
 
 /*
+ * Compute distance with a type-aware fast path when available
+ */
+static inline double
+ComputeScanDistance(IvfflatScanOpaque so, Datum a, Datum b)
+{
+	if (DatumGetPointer(b) == NULL)
+		return 0.0;
+
+	switch (so->distanceKind)
+	{
+		case IVFFLAT_DISTANCE_VECTOR_L2:
+		{
+			Vector	   *va = DatumGetVector(a);
+			Vector	   *vb = DatumGetVector(b);
+
+			return (double) VectorL2SquaredDistance(so->dimensions, va->x, vb->x);
+		}
+		case IVFFLAT_DISTANCE_VECTOR_IP:
+		{
+			Vector	   *va = DatumGetVector(a);
+			Vector	   *vb = DatumGetVector(b);
+
+			return -(double) VectorInnerProduct(so->dimensions, va->x, vb->x);
+		}
+		case IVFFLAT_DISTANCE_HALFVEC_L2:
+		{
+			HalfVector *ha = DatumGetHalfVector(a);
+			HalfVector *hb = DatumGetHalfVector(b);
+
+			return (double) HalfvecL2SquaredDistance(so->dimensions, ha->x, hb->x);
+		}
+		case IVFFLAT_DISTANCE_HALFVEC_IP:
+		{
+			HalfVector *ha = DatumGetHalfVector(a);
+			HalfVector *hb = DatumGetHalfVector(b);
+
+			return -(double) HalfvecInnerProduct(so->dimensions, ha->x, hb->x);
+		}
+		case IVFFLAT_DISTANCE_FMGR:
+			break;
+	}
+
+	return DatumGetFloat8(FunctionCall2Coll(so->procinfo, so->collation, a, b));
+}
+
+/*
+ * Check dimensions once before using a direct distance kernel
+ */
+static void
+CheckScanValueDimensions(IvfflatScanOpaque so, Datum value)
+{
+	switch (so->distanceKind)
+	{
+		case IVFFLAT_DISTANCE_VECTOR_L2:
+		case IVFFLAT_DISTANCE_VECTOR_IP:
+		{
+			Vector	   *vector = DatumGetVector(value);
+
+			if (vector->dim != so->dimensions)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_EXCEPTION),
+						 errmsg("different vector dimensions %d and %d", so->dimensions, vector->dim)));
+			break;
+		}
+		case IVFFLAT_DISTANCE_HALFVEC_L2:
+		case IVFFLAT_DISTANCE_HALFVEC_IP:
+		{
+			HalfVector *halfvec = DatumGetHalfVector(value);
+
+			if (halfvec->dim != so->dimensions)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_EXCEPTION),
+						 errmsg("different halfvec dimensions %d and %d", so->dimensions, halfvec->dim)));
+			break;
+		}
+		case IVFFLAT_DISTANCE_FMGR:
+			break;
+	}
+}
+
+/*
  * Get lists and sort by distance
  */
 static void
@@ -71,7 +154,7 @@ GetScanLists(IndexScanDesc scan, Datum value)
 			double		distance;
 
 			/* Use procinfo from the index instead of scan key for performance */
-			distance = DatumGetFloat8(so->distfunc(so->procinfo, so->collation, PointerGetDatum(&list->center), value));
+			distance = ComputeScanDistance(so, PointerGetDatum(&list->center), value);
 
 			if (listCount < so->maxProbes)
 			{
@@ -164,7 +247,7 @@ GetScanItems(IndexScanDesc scan, Datum value)
 				 * performance
 				 */
 				ExecClearTuple(slot);
-				slot->tts_values[0] = so->distfunc(so->procinfo, so->collation, datum, value);
+				slot->tts_values[0] = Float8GetDatum(ComputeScanDistance(so, datum, value));
 				slot->tts_isnull[0] = false;
 				slot->tts_values[1] = PointerGetDatum(&itup->t_tid);
 				slot->tts_isnull[1] = false;
@@ -187,15 +270,6 @@ GetScanItems(IndexScanDesc scan, Datum value)
 }
 
 /*
- * Zero distance
- */
-static Datum
-ZeroDistance(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2)
-{
-	return Float8GetDatum(0.0);
-}
-
-/*
  * Get scan value
  */
 static Datum
@@ -205,14 +279,10 @@ GetScanValue(IndexScanDesc scan)
 	Datum		value;
 
 	if (scan->orderByData->sk_flags & SK_ISNULL)
-	{
 		value = PointerGetDatum(NULL);
-		so->distfunc = ZeroDistance;
-	}
 	else
 	{
 		value = scan->orderByData->sk_argument;
-		so->distfunc = FunctionCall2Coll;
 
 		/* Value should not be compressed or toasted */
 		Assert(!VARATT_IS_COMPRESSED(DatumGetPointer(value)));
@@ -227,6 +297,8 @@ GetScanValue(IndexScanDesc scan)
 
 			MemoryContextSwitchTo(oldCtx);
 		}
+
+		CheckScanValueDimensions(so, value);
 	}
 
 	return value;
@@ -288,6 +360,17 @@ ivfflatbeginscan(Relation index, int nkeys, int norderbys)
 	so->procinfo = index_getprocinfo(index, 1, IVFFLAT_DISTANCE_PROC);
 	so->normprocinfo = IvfflatOptionalProcInfo(index, IVFFLAT_NORM_PROC);
 	so->collation = index->rd_indcollation[0];
+
+	/* Select a type-aware distance fast path */
+	so->distanceKind = IVFFLAT_DISTANCE_FMGR;
+	if (so->procinfo->fn_addr == vector_l2_squared_distance)
+		so->distanceKind = IVFFLAT_DISTANCE_VECTOR_L2;
+	else if (so->procinfo->fn_addr == vector_negative_inner_product)
+		so->distanceKind = IVFFLAT_DISTANCE_VECTOR_IP;
+	else if (so->procinfo->fn_addr == halfvec_l2_squared_distance)
+		so->distanceKind = IVFFLAT_DISTANCE_HALFVEC_L2;
+	else if (so->procinfo->fn_addr == halfvec_negative_inner_product)
+		so->distanceKind = IVFFLAT_DISTANCE_HALFVEC_IP;
 
 	so->tmpCtx = AllocSetContextCreate(CurrentMemoryContext,
 									   "Ivfflat scan temporary context",
