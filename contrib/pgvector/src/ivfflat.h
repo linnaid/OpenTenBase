@@ -56,6 +56,9 @@ typedef Pointer Item;
 #define IVFFLAT_MIN_LISTS		1
 #define IVFFLAT_MAX_LISTS		32768
 #define IVFFLAT_DEFAULT_PROBES	1
+#define IVFFLAT_LIST_CACHE_MAGIC	0x49564348
+#define IVFFLAT_LIST_CACHE_VERSION	1
+#define IVFFLAT_LIST_CACHE_MAX_BYTES	(4 * 1024 * 1024)
 
 /* Build phases */
 /* PROGRESS_CREATEIDX_SUBPHASE_INITIALIZE is 1 */
@@ -276,6 +279,38 @@ typedef struct IvfflatListData
 
 typedef IvfflatListData * IvfflatList;
 
+typedef struct IvfflatListCacheEntry
+{
+	BlockNumber startPage;
+} IvfflatListCacheEntry;
+
+typedef struct IvfflatListCacheData
+{
+	uint32		magic;
+	uint16		version;
+	uint16		cacheable;
+	int			lists;
+	int			dimensions;
+	Size		itemSize;
+	Size		centersOffset;
+	IvfflatListCacheEntry entries[FLEXIBLE_ARRAY_MEMBER];
+} IvfflatListCacheData;
+
+typedef IvfflatListCacheData * IvfflatListCache;
+
+static inline IvfflatListCacheEntry *
+IvfflatListCacheGetEntry(IvfflatListCache cache, int list)
+{
+	return &cache->entries[list];
+}
+
+static inline Pointer
+IvfflatListCacheGetCenter(IvfflatListCache cache, int list)
+{
+	return ((char *) cache) + cache->centersOffset +
+		((Size) list * cache->itemSize);
+}
+
 typedef struct IvfflatScanList
 {
 	pairingheap_node ph_node;
@@ -358,6 +393,7 @@ bool		IvfflatCheckNorm(FmgrInfo *procinfo, Oid collation, Datum value);
 void		IvfflatNormVectors(const IvfflatTypeInfo * typeInfo, Oid collation, VectorArray arr, MemoryContext tmpCtx);
 void		IvfflatCheckMemoryUsage(Size totalSize);
 int			IvfflatGetLists(Relation index);
+IvfflatListCache IvfflatGetListCache(Relation index, const IvfflatTypeInfo *typeInfo);
 void		IvfflatGetMetaPageInfo(Relation index, int *lists, int *dimensions);
 void		IvfflatUpdateList(Relation index, ListInfo listInfo, BlockNumber insertPage, BlockNumber originalInsertPage, BlockNumber startPage, ForkNumber forkNum);
 void		IvfflatCommitBuffer(Buffer buf, GenericXLogState *state);

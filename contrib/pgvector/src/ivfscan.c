@@ -89,6 +89,35 @@ ComputeScanDistance(IvfflatScanOpaque so, Datum a, Datum b)
 	return DatumGetFloat8(FunctionCall2Coll(so->procinfo, so->collation, a, b));
 }
 
+/* Add a list to the bounded pairing heap. */
+static void
+AddScanList(IvfflatScanOpaque so, int *listCount, BlockNumber startPage,
+				double distance, double *maxDistance)
+{
+	if (*listCount < so->maxProbes)
+	{
+		IvfflatScanList *scanlist;
+
+		scanlist = &so->lists[(*listCount)++];
+		scanlist->startPage = startPage;
+		scanlist->distance = distance;
+		pairingheap_add(so->listQueue, &scanlist->ph_node);
+
+		if (*listCount == so->maxProbes)
+			*maxDistance = GetScanList(pairingheap_first(so->listQueue))->distance;
+	}
+	else if (distance < *maxDistance)
+	{
+		IvfflatScanList *scanlist;
+
+		scanlist = GetScanList(pairingheap_remove_first(so->listQueue));
+		scanlist->startPage = startPage;
+		scanlist->distance = distance;
+		pairingheap_add(so->listQueue, &scanlist->ph_node);
+		*maxDistance = GetScanList(pairingheap_first(so->listQueue))->distance;
+	}
+}
+
 /*
  * Check dimensions once before using a direct distance kernel
  */
@@ -131,9 +160,30 @@ static void
 GetScanLists(IndexScanDesc scan, Datum value)
 {
 	IvfflatScanOpaque so = (IvfflatScanOpaque) scan->opaque;
-	BlockNumber nextblkno = IVFFLAT_HEAD_BLKNO;
+	IvfflatListCache cache;
+	BlockNumber nextblkno;
 	int			listCount = 0;
 	double		maxDistance = DBL_MAX;
+
+	cache = IvfflatGetListCache(scan->indexRelation, so->typeInfo);
+	if (cache != NULL)
+	{
+		for (int i = 0; i < cache->lists; i++)
+		{
+			double distance;
+
+			distance = ComputeScanDistance(so,
+										   PointerGetDatum(IvfflatListCacheGetCenter(cache, i)),
+										   value);
+			AddScanList(so, &listCount,
+						 IvfflatListCacheGetEntry(cache, i)->startPage,
+						 distance, &maxDistance);
+		}
+
+		goto finish_list_selection;
+	}
+
+	nextblkno = IVFFLAT_HEAD_BLKNO;
 
 	/* Search all list pages */
 	while (BlockNumberIsValid(nextblkno))
@@ -156,37 +206,7 @@ GetScanLists(IndexScanDesc scan, Datum value)
 			/* Use procinfo from the index instead of scan key for performance */
 			distance = ComputeScanDistance(so, PointerGetDatum(&list->center), value);
 
-			if (listCount < so->maxProbes)
-			{
-				IvfflatScanList *scanlist;
-
-				scanlist = &so->lists[listCount];
-				scanlist->startPage = list->startPage;
-				scanlist->distance = distance;
-				listCount++;
-
-				/* Add to heap */
-				pairingheap_add(so->listQueue, &scanlist->ph_node);
-
-				/* Calculate max distance */
-				if (listCount == so->maxProbes)
-					maxDistance = GetScanList(pairingheap_first(so->listQueue))->distance;
-			}
-			else if (distance < maxDistance)
-			{
-				IvfflatScanList *scanlist;
-
-				/* Remove */
-				scanlist = GetScanList(pairingheap_remove_first(so->listQueue));
-
-				/* Reuse */
-				scanlist->startPage = list->startPage;
-				scanlist->distance = distance;
-				pairingheap_add(so->listQueue, &scanlist->ph_node);
-
-				/* Update max distance */
-				maxDistance = GetScanList(pairingheap_first(so->listQueue))->distance;
-			}
+			AddScanList(so, &listCount, list->startPage, distance, &maxDistance);
 		}
 
 		nextblkno = IvfflatPageGetOpaque(cpage)->nextblkno;
@@ -194,10 +214,13 @@ GetScanLists(IndexScanDesc scan, Datum value)
 		UnlockReleaseBuffer(cbuf);
 	}
 
+finish_list_selection:
 	for (int i = listCount - 1; i >= 0; i--)
 		so->listPages[i] = GetScanList(pairingheap_remove_first(so->listQueue))->startPage;
 
 	Assert(pairingheap_is_empty(so->listQueue));
+	if (cache != NULL && !cache->cacheable)
+		pfree(cache);
 }
 
 /*

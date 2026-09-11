@@ -129,6 +129,115 @@ IvfflatCheckMemoryUsage(Size totalSize)
 }
 
 /*
+ * Load immutable list metadata into the relation cache.
+ *
+ * startPage is cached only when every list is already non-empty. An empty list
+ * can receive its first tuple later without invalidating the relcache entry,
+ * so caching it would make the cached directory stale across backends.
+ */
+IvfflatListCache
+IvfflatGetListCache(Relation index, const IvfflatTypeInfo *typeInfo)
+{
+	IvfflatListCache cache;
+	int			lists;
+	int			dimensions;
+	Size		itemSize;
+	Size		entriesOffset;
+	Size		centersOffset;
+	Size		cacheSize;
+	BlockNumber nextblkno = IVFFLAT_HEAD_BLKNO;
+	int			listNo = 0;
+	bool		cacheable = true;
+
+	if (index->rd_amcache != NULL)
+	{
+		cache = (IvfflatListCache) index->rd_amcache;
+
+		if (cache->magic == IVFFLAT_LIST_CACHE_MAGIC &&
+			cache->version == IVFFLAT_LIST_CACHE_VERSION)
+			return cache->cacheable ? cache : NULL;
+
+		return NULL;
+	}
+
+	IvfflatGetMetaPageInfo(index, &lists, &dimensions);
+	itemSize = MAXALIGN(typeInfo->itemSize(dimensions));
+	entriesOffset = MAXALIGN(offsetof(IvfflatListCacheData, entries));
+	centersOffset = MAXALIGN(add_size(entriesOffset,
+									 mul_size((Size) lists, sizeof(IvfflatListCacheEntry))));
+	cacheSize = add_size(centersOffset, mul_size((Size) lists, itemSize));
+
+	if (cacheSize > IVFFLAT_LIST_CACHE_MAX_BYTES)
+	{
+		/* Remember permanent size failures without retaining page data. */
+		cache = MemoryContextAllocZero(index->rd_indexcxt,
+									   sizeof(IvfflatListCacheData));
+		cache->magic = IVFFLAT_LIST_CACHE_MAGIC;
+		cache->version = IVFFLAT_LIST_CACHE_VERSION;
+		cache->cacheable = false;
+		index->rd_amcache = cache;
+		return NULL;
+	}
+
+	cache = MemoryContextAllocZero(index->rd_indexcxt, cacheSize);
+	cache->magic = IVFFLAT_LIST_CACHE_MAGIC;
+	cache->version = IVFFLAT_LIST_CACHE_VERSION;
+	cache->cacheable = true;
+	cache->lists = lists;
+	cache->dimensions = dimensions;
+	cache->itemSize = itemSize;
+	cache->centersOffset = centersOffset;
+
+	while (BlockNumberIsValid(nextblkno))
+	{
+		Buffer		cbuf;
+		Page		cpage;
+		OffsetNumber maxoffno;
+
+		cbuf = ReadBuffer(index, nextblkno);
+		LockBuffer(cbuf, BUFFER_LOCK_SHARE);
+		cpage = BufferGetPage(cbuf);
+		maxoffno = PageGetMaxOffsetNumber(cpage);
+
+		for (OffsetNumber offno = FirstOffsetNumber;
+			 offno <= maxoffno;
+			 offno = OffsetNumberNext(offno))
+		{
+			IvfflatList list;
+			Size		centerSize;
+
+			if (listNo >= lists)
+				elog(ERROR, "ivfflat list directory contains too many lists");
+
+			list = (IvfflatList) PageGetItem(cpage, PageGetItemId(cpage, offno));
+			if (!BlockNumberIsValid(list->startPage))
+				cacheable = false;
+
+			centerSize = VARSIZE_ANY(&list->center);
+			if (centerSize > itemSize)
+				elog(ERROR, "ivfflat list center is larger than its type size");
+
+			cache->entries[listNo].startPage = list->startPage;
+			memcpy(IvfflatListCacheGetCenter(cache, listNo),
+				   &list->center, centerSize);
+			listNo++;
+		}
+
+		nextblkno = IvfflatPageGetOpaque(cpage)->nextblkno;
+		UnlockReleaseBuffer(cbuf);
+	}
+
+	if (listNo != lists)
+		elog(ERROR, "ivfflat list directory contains too few lists");
+
+	cache->cacheable = cacheable;
+	if (cacheable)
+		index->rd_amcache = cache;
+	/* An incomplete directory is used for this scan and then freed by caller. */
+	return cache;
+}
+
+/*
  * New buffer
  */
 Buffer
